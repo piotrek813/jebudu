@@ -1,0 +1,70 @@
+#!/bin/bash
+
+die() {
+    printf "\33[2K\r\033[1;31m%s\033[0m\n" "$*" >&2
+    exit 1
+}
+
+extension() {
+    if [[ "$1" != *.* ]]; then
+        echo ""
+        return
+    fi
+
+    echo "${1#*.}"
+}
+
+gh_install() {
+    repo=$1
+
+    res=$(gh api \
+      -H "Accept: application/vnd.github+json" \
+      -H "X-GitHub-Api-Version: 2022-11-28" \
+      /repos/"$1"/releases/latest | jq '.assets')
+
+    name=$(echo "$res" | jq -r '.[].name | select(test("linux"))' | pick_one)
+
+
+   download_url=$(echo "$res" | jq -r --arg name "$name" '.[] | select(.name == $name) | .browser_download_url')
+
+   name_no_ext="${name%%.*}"
+   case "$(extension $name)" in
+       "")
+           download_binary $1 /usr/local/bin/yq
+           ;;
+       tar.gz)
+           echo "tar-gz"
+           ;;
+       deb)
+           echo "deb-gz"
+           ;;
+       *)
+           echo "i don know"
+           ;;
+   esac
+
+   # mkdir "/tmp/$name_no_ext"
+   #
+}
+
+download_binary() {
+   download_url="$1"
+   dir="$2"
+   sudo wget "$download_url" -O "$dir"
+   chown +x "$dir"
+}
+
+file_install() {
+    file=$1
+}
+
+pick_one() {
+    fzf $1
+}
+
+dep_ch() {
+    for dep in "$@"; do
+        command -v "$dep" >/dev/null || die "program \"$dep\" not found. please install it."
+    done
+}
+
