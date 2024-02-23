@@ -5,6 +5,20 @@ die() {
     exit 1
 }
 
+show_spinner() {
+    pid=$! # Process Id of the previous running command
+
+    spin='-\|/'
+
+    i=0
+    while kill -0 $pid 2>/dev/null
+    do
+        i=$(( (i+1) %4 ))
+        printf "\r${spin:$i:1}"
+        sleep .1
+    done
+}
+
 extension() {
     if [[ "$1" != *.* ]]; then
         echo ""
@@ -20,9 +34,14 @@ gh_install() {
     res=$(gh api \
       -H "Accept: application/vnd.github+json" \
       -H "X-GitHub-Api-Version: 2022-11-28" \
-      /repos/"$1"/releases/latest | jq '.assets')
+      /repos/"$1"/releases/latest | jq '.assets' &)
 
+    show_spinner
     name=$(echo "$res" | jq -r '.[].name | select(test("linux"))' | pick_one)
+
+    if [[ -z "$name" ]]; then
+        return
+    fi
 
 
    download_url=$(echo "$res" | jq -r --arg name "$name" '.[] | select(.name == $name) | .browser_download_url')
@@ -30,7 +49,8 @@ gh_install() {
    name_no_ext="${name%%.*}"
    case "$(extension $name)" in
        "")
-           download_binary $1 /usr/local/bin/yq
+           # download_binary $1 /usr/local/bin/yq
+           download_binary $download_url dupa
            ;;
        tar.gz)
            echo "tar-gz"
@@ -50,7 +70,8 @@ gh_install() {
 download_binary() {
    download_url="$1"
    dir="$2"
-   sudo wget "$download_url" -O "$dir"
+   sudo wget "$download_url" -O "$dir" -o /dev/null &
+   show_spinner
    chown +x "$dir"
 }
 
@@ -68,3 +89,5 @@ dep_ch() {
     done
 }
 
+
+gh_install mikefarah/yq
