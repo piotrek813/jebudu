@@ -5,18 +5,31 @@ die() {
     exit 1
 }
 
-show_spinner() {
-    pid=$! # Process Id of the previous running command
+function cursorBack() {
+  echo -en "\033[$1D"
+  # Mac compatible, but goes back to first column always. See comments
+  #echo -en "\r"
+}
 
-    spin='-\|/'
+function spinner() {
+    local LC_CTYPE=C
 
-    i=0
-    while kill -0 $pid 2>/dev/null
-    do
-        i=$(( (i+1) %4 ))
-        printf "\r${spin:$i:1}"
+    local spin='⣾⣽⣻⢿⡿⣟⣯⣷'
+    local charwidth=3
+
+    local i=0
+    while true; do
+        local i=$(((i + $charwidth) % ${#spin}))
+        printf "\r%s  %s" "${spin:$i:$charwidth}" "$1"
+
+        # cursorBack 1
         sleep .1
     done
+
+}
+
+filename_no_extension() {
+    echo "${name%%.*}"
 }
 
 extension() {
@@ -28,29 +41,41 @@ extension() {
     echo "${1#*.}"
 }
 
+show_spinner() {
+    spinner "$1" &
+    tput civis # cursor invisible
+    trap stop_spinner EXIT
+    spinner_pid=$!
+}
+
+stop_spinner() {
+    kill $spinner_pid 2> /dev/null
+    printf "\r\033[K"
+    tput cnorm
+}
+
 gh_install() {
     repo=$1
 
+    show_spinner "Fetching releases from github"
     res=$(gh api \
-      -H "Accept: application/vnd.github+json" \
-      -H "X-GitHub-Api-Version: 2022-11-28" \
-      /repos/"$1"/releases/latest | jq '.assets' &)
+        -H "Accept: application/vnd.github+json" \
+        -H "X-GitHub-Api-Version: 2022-11-28" \
+        /repos/charmbracelet/gum/releases/latest | jq '.assets | map({name, browser_download_url})')
+    stop_spinner
 
-    show_spinner
-    name=$(echo "$res" | jq -r '.[].name | select(test("linux"))' | pick_one)
+    name=$(echo "$res" | jq -r '[.[] | select(.name | test("Linux"; "i"))] | sort_by(if(.name | test("x86_64")) then -1 else 1 end ) | .[].name' | pick_one)
 
     if [[ -z "$name" ]]; then
         return
     fi
 
-
    download_url=$(echo "$res" | jq -r --arg name "$name" '.[] | select(.name == $name) | .browser_download_url')
+   echo "$download_url"
 
-   name_no_ext="${name%%.*}"
    case "$(extension $name)" in
        "")
-           # download_binary $1 /usr/local/bin/yq
-           download_binary $download_url dupa
+           # download_binary $download_url
            ;;
        tar.gz)
            echo "tar-gz"
@@ -62,16 +87,11 @@ gh_install() {
            echo "i don know"
            ;;
    esac
-
-   # mkdir "/tmp/$name_no_ext"
-   #
 }
 
 download_binary() {
    download_url="$1"
-   dir="$2"
    sudo wget "$download_url" -O "$dir" -o /dev/null &
-   show_spinner
    chown +x "$dir"
 }
 
@@ -89,5 +109,15 @@ dep_ch() {
     done
 }
 
+setup_jebuds() {
+    ls ~/code/dotfiles | fzf  --bind space:toggle \
+                                --border rounded \
 
-gh_install mikefarah/yq
+}
+
+# setup_jebuds
+gh_install charmbracelet/gum
+# gh_install justchokingaround/lobster
+# gh_install nvm-sh/nvm
+# gh_install mikefarah/yq
+
